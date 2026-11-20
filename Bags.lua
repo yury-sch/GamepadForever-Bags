@@ -1,5 +1,36 @@
 local _, addon = ...
 
+-- Layout and SmartNavigation changes must wait while combat restrictions are active.
+function addon.IsLayoutRestricted()
+    return InCombatLockdown()
+        or (C_RestrictedActions and C_RestrictedActions.IsAddOnRestrictionActive(Enum.AddOnRestrictionType.Combat))
+end
+
+-- Extension point for optional modules (SelectionMemory.lua, Navigation.lua). A listener is a table
+-- with any of these methods, called with the listener as self:
+--   Init(inventory, db)        once, when the bag logic is registered; db is the saved settings
+--   Layout(sections, columns)  after each gamepad layout; sections are in display order, each with
+--                              id, button (bag slot button or nil) and slots (shown item buttons)
+--   NavigationRefreshed()      after SmartNavigation's button groups were rebuilt (out of combat)
+--   Closed()                   when the combined inventory hides
+--   CombatEnded()              when combat ends while the inventory is shown
+-- A listener error is reported through WoW's error handler and never interrupts the layout.
+local listeners = {}
+
+function addon.RegisterBagsListener(listener)
+    listeners[#listeners + 1] = listener
+end
+
+local function notify(event, ...)
+    for _, listener in ipairs(listeners) do
+        local handler = listener[event]
+        if handler then
+            local ok, err = pcall(handler, listener, ...)
+            if not ok then geterrorhandler()(err) end
+        end
+    end
+end
+
 function addon.RegisterBags(inventory, db)
     -- State
     local slotGap = 5
@@ -11,13 +42,9 @@ function addon.RegisterBags(inventory, db)
     local pendingLayout, navigationQueued
     local wasShown = inventory:IsShown()
     local visibilityCheckQueued = false
+    local layoutRestricted = addon.IsLayoutRestricted
 
     -- Native gamepad navigation
-    local function layoutRestricted()
-        return InCombatLockdown()
-            or (C_RestrictedActions and C_RestrictedActions.IsAddOnRestrictionActive(Enum.AddOnRestrictionType.Combat))
-    end
-
     local function requestNavigationRefresh()
         if navigationQueued or not SmartNavigation then return end
         navigationQueued = true
@@ -38,6 +65,7 @@ function addon.RegisterBags(inventory, db)
                     SmartNavigation:SetUseGridNavigation(inventory, false)
                 end
                 SmartNavigation:RefreshButtonGroups(inventory)
+                notify("NavigationRefreshed")
             end)
         end)
     end
@@ -189,7 +217,10 @@ function addon.RegisterBags(inventory, db)
         end
 
         inventory:LayoutAddSlots()
-        if gamepad then requestNavigationRefresh() end
+        if gamepad then
+            notify("Layout", sections, columns)
+            requestNavigationRefresh()
+        end
     end
 
     -- Automatic sorting
@@ -204,14 +235,20 @@ function addon.RegisterBags(inventory, db)
     end
 
     local function onBagVisibilityChanged(_, bag)
-        if bag ~= inventory or visibilityCheckQueued then return end
+        if bag ~= inventory then return end
+        if not inventory:IsShown() then notify("Closed") end
+        if visibilityCheckQueued then return end
         visibilityCheckQueued = true
         -- WoW can close and reopen the frame in one update when rebuilding the bags.
         C_Timer.After(0, checkBagOpening)
     end
 
     local function onInventoryEvent(_, event)
-        if pendingLayout or event == "DISPLAY_SIZE_CHANGED" then arrangeInventory() end
+        if pendingLayout or event == "DISPLAY_SIZE_CHANGED" then
+            arrangeInventory()
+        elseif event == "PLAYER_REGEN_ENABLED" and inventory:IsVisible() then
+            notify("CombatEnded")
+        end
     end
 
     -- Event and hook registration
@@ -223,5 +260,6 @@ function addon.RegisterBags(inventory, db)
     EventRegistry:RegisterCallback("ContainerFrame.OpenBag", onBagVisibilityChanged, events)
     EventRegistry:RegisterCallback("ContainerFrame.CloseBag", onBagVisibilityChanged, events)
 
+    notify("Init", inventory, db)
     arrangeInventory()
 end

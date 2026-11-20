@@ -10,6 +10,7 @@
 ## Version: 1.0.12
 ## Dependencies: Blizzard_UIPanels_Game
 ## SavedVariables: GamepadForeverBagsSettings
+## SavedVariablesPerCharacter: GamepadForeverBagsCharacter
 ## IconTexture: Interface\Icons\Inv_misc_bag_08
 
 Localization\EN.lua
@@ -20,4 +21,6 @@ Localization\PT.lua
 Localization\RU.lua
 Settings.lua
 Bags.lua
+SelectionMemory.lua
+Navigation.lua
 Addon.lua

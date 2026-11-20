@@ -6,6 +6,8 @@ addon.localization.EN = {
         General = {
             autoSortOnOpen = "Sort bags on open",
             autoSortOnOpenTooltip = "Sorts the combined bags when opened out of combat.",
+            readingOrderNavigation = "Continue to next/previous row at row edges",
+            readingOrderNavigationTooltip = "When enabled, Left and Right continue through items in reading order. When disabled, navigation wraps within the current row.",
         },
     },
 }
